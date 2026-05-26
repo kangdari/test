@@ -139,7 +139,6 @@ function App() {
         },
       ];
     });
-    setSavedPanelOpen(true);
   }
 
   function removeModifier(id: string) {
