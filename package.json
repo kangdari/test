@@ -5,9 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "npm run generate:items && tsc -b && vite build",
+    "build": "npm run generate:items && npm run generate:passive-tree && tsc -b && vite build",
     "preview": "vite preview",
     "generate:items": "node scripts/generate-items.mjs",
+    "generate:passive-tree": "node scripts/generate-passive-tree.mjs",
     "sync:content": "node scripts/sync-content.mjs"
   },
   "dependencies": {

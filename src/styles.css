@@ -377,16 +377,12 @@ h1 {
   stroke-width: 58;
 }
 
-.tree-node-button {
-  cursor: pointer;
-  outline: none;
-}
-
 .tree-node {
   fill: #837c65;
   stroke: #16120b;
   stroke-width: 22;
-  filter: drop-shadow(0 0 54px rgba(216, 148, 67, 0.1));
+  cursor: pointer;
+  outline: none;
   transition:
     fill 140ms ease,
     stroke 140ms ease,
@@ -427,7 +423,8 @@ h1 {
   stroke-width: 28;
 }
 
-.tree-node-button:hover .tree-node,
+.tree-node:hover,
+.tree-node:focus-visible,
 .tree-node.selected {
   stroke: #fff0c6;
   stroke-width: 52;
@@ -473,6 +470,36 @@ h1 {
   margin: 0;
   color: var(--muted);
   font-size: 0.86rem;
+}
+
+.node-panel-header .node-original {
+  margin-bottom: 6px;
+  color: #a99a82;
+  font-size: 0.84rem;
+  line-height: 1.35;
+}
+
+.translated-stat {
+  display: grid;
+  gap: 4px;
+}
+
+.translated-stat small,
+.translated-flavour small {
+  display: block;
+  color: #9f927e;
+  font-size: 0.78rem;
+  font-style: normal;
+  line-height: 1.35;
+}
+
+.translated-flavour {
+  display: grid;
+  gap: 6px;
+}
+
+.translated-flavour + .translated-flavour {
+  margin-top: 10px;
 }
 
 .node-empty,

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
   Bookmark,
@@ -28,29 +28,33 @@ type SavedModifier = {
 
 type PassiveTreeClass = {
   name: string;
+  nameKr?: string;
   base_str: number;
   base_dex: number;
   base_int: number;
-  ascendancies: { id: string; name: string }[];
+  ascendancies: { id: string; name: string; nameKr?: string }[];
 };
 
 type PassiveTreeNode = {
-  skill: number;
   name: string;
-  icon?: string;
+  nameKr?: string;
   stats?: string[];
+  statsKr?: string[];
   flavourText?: string[];
+  flavourTextKr?: string[];
   isNotable?: boolean;
   isKeystone?: boolean;
   isMastery?: boolean;
   ascendancyId?: string;
-  x?: number;
-  y?: number;
+  x: number;
+  y: number;
+  affinity?: "str" | "dex" | "int";
+  searchText: string;
 };
 
 type PassiveTreeEdge = {
-  from: string | number;
-  to: string | number;
+  from: string;
+  to: string;
   orbitX?: number;
   orbitY?: number;
 };
@@ -123,22 +127,9 @@ function getNodeClassName(node: PassiveTreeNode, selected: boolean) {
   if (node.isKeystone) classes.push("keystone");
   else if (node.isNotable) classes.push("notable");
   else if (node.ascendancyId) classes.push("ascendancy");
+  classes.push(node.affinity ?? "neutral");
   if (selected) classes.push("selected");
   return classes.join(" ");
-}
-
-function getNodeAffinity(node: PassiveTreeNode) {
-  const haystack = [node.icon, node.name, ...(node.stats ?? [])].join(" ").toLowerCase();
-  if (haystack.includes("fire") || haystack.includes("strength") || haystack.includes("armour")) {
-    return "str";
-  }
-  if (haystack.includes("cold") || haystack.includes("lightning") || haystack.includes("spell")) {
-    return "int";
-  }
-  if (haystack.includes("evasion") || haystack.includes("poison") || haystack.includes("projectile")) {
-    return "dex";
-  }
-  return "neutral";
 }
 
 function getClassBackgroundName(selectedClass: string) {
@@ -156,12 +147,8 @@ function getClassBackgroundName(selectedClass: string) {
   return backgrounds.has(className) ? className : "witch";
 }
 
-function stripStatMarkup(value: string) {
-  return value.replace(/\[([^\]|]+)\|([^\]]+)\]/g, "$2").replace(/\[([^\]]+)\]/g, "$1");
-}
-
-function hasTreePosition(node: PassiveTreeNode) {
-  return Number.isFinite(node.x) && Number.isFinite(node.y);
+function getLocalizedText(korean: string | undefined, english: string) {
+  return korean && korean !== english ? korean : english;
 }
 
 function readSavedModifiers() {
@@ -389,11 +376,12 @@ function PassiveTreeView() {
   const [selectedClass, setSelectedClass] = useState("all");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const deferredTreeQuery = useDeferredValue(treeQuery);
 
   useEffect(() => {
     let canceled = false;
 
-    fetch("/passive-tree/data.json")
+    fetch("/passive-tree/compact.json")
       .then((response) => {
         if (!response.ok) throw new Error("Failed to load passive tree data");
         return response.json() as Promise<PassiveTreeData>;
@@ -402,11 +390,9 @@ function PassiveTreeView() {
         if (!canceled) {
           setTreeData(data);
           const firstNotable = Object.entries(data.nodes).find(
-            ([, node]) => node.isNotable && hasTreePosition(node),
+            ([, node]) => node.isNotable,
           );
-          const firstPositionedNode = Object.entries(data.nodes).find(([, node]) =>
-            hasTreePosition(node),
-          );
+          const firstPositionedNode = Object.entries(data.nodes).find(([, node]) => node);
           setSelectedNodeId(firstNotable?.[0] ?? firstPositionedNode?.[0] ?? null);
         }
       })
@@ -427,10 +413,9 @@ function PassiveTreeView() {
 
   const filteredNodeEntries = useMemo(() => {
     if (!treeData) return [];
-    const normalizedQuery = treeQuery.trim().toLowerCase();
+    const normalizedQuery = deferredTreeQuery.trim().toLowerCase();
 
     return Object.entries(treeData.nodes).filter(([, node]) => {
-      if (!hasTreePosition(node)) return false;
       const matchesType =
         nodeType === "all" ||
         (nodeType === "notable" && node.isNotable) ||
@@ -440,11 +425,10 @@ function PassiveTreeView() {
         selectedClass === "all" ||
         !node.ascendancyId ||
         classAscendancyIds.has(node.ascendancyId);
-      const searchableText = [node.name, ...(node.stats ?? [])].join(" ").toLowerCase();
-      const matchesQuery = !normalizedQuery || searchableText.includes(normalizedQuery);
+      const matchesQuery = !normalizedQuery || node.searchText.includes(normalizedQuery);
       return matchesType && matchesClass && matchesQuery;
     });
-  }, [classAscendancyIds, nodeType, selectedClass, treeData, treeQuery]);
+  }, [classAscendancyIds, deferredTreeQuery, nodeType, selectedClass, treeData]);
 
   const visibleNodeIds = useMemo(
     () => new Set(filteredNodeEntries.map(([nodeId]) => nodeId)),
@@ -460,6 +444,37 @@ function PassiveTreeView() {
         treeWidth + viewBoxPadding * 2
       } ${treeHeight + viewBoxPadding * 2}`
     : "0 0 1 1";
+  const visibleLinkPath = useMemo(() => {
+    if (!treeData) return "";
+
+    return treeData.edges
+      .map((edge) => {
+        if (!visibleNodeIds.has(edge.from) || !visibleNodeIds.has(edge.to)) return "";
+
+        const from = treeData.nodes[edge.from];
+        const to = treeData.nodes[edge.to];
+        if (!from || !to) return "";
+
+        if (Number.isFinite(edge.orbitX) && Number.isFinite(edge.orbitY)) {
+          return `M ${from.x} ${from.y} Q ${edge.orbitX} ${edge.orbitY} ${to.x} ${to.y}`;
+        }
+        return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
+      })
+      .filter(Boolean)
+      .join(" ");
+  }, [treeData, visibleNodeIds]);
+
+  function selectEventNode(target: EventTarget | null) {
+    if (!(target instanceof SVGElement)) return;
+    const nodeId = target.dataset.nodeId;
+    if (nodeId) setSelectedNodeId(nodeId);
+  }
+
+  function handleTreeNodeKeyDown(event: React.KeyboardEvent<SVGGElement>) {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    selectEventNode(event.target);
+  }
 
   if (loadError) {
     return (
@@ -499,7 +514,7 @@ function PassiveTreeView() {
               <option value="all">전체</option>
               {treeData.classes.map((treeClass) => (
                 <option key={treeClass.name} value={treeClass.name}>
-                  {treeClass.name}
+                  {getLocalizedText(treeClass.nameKr, treeClass.name)}
                 </option>
               ))}
             </select>
@@ -563,61 +578,25 @@ function PassiveTreeView() {
               preserveAspectRatio="xMidYMid slice"
             />
 
-            <g className="tree-links">
-              {treeData.edges.map((edge) => {
-                const fromId = String(edge.from);
-                const toId = String(edge.to);
-                const from = treeData.nodes[fromId];
-                const to = treeData.nodes[toId];
-                if (
-                  !from ||
-                  !to ||
-                  !hasTreePosition(from) ||
-                  !hasTreePosition(to) ||
-                  !visibleNodeIds.has(fromId) ||
-                  !visibleNodeIds.has(toId)
-                ) {
-                  return null;
-                }
+            <g className="tree-links">{visibleLinkPath ? <path d={visibleLinkPath} /> : null}</g>
 
-                return (
-                  <path
-                    key={`${fromId}-${toId}`}
-                    d={
-                      Number.isFinite(edge.orbitX) && Number.isFinite(edge.orbitY)
-                        ? `M ${from.x} ${from.y} Q ${edge.orbitX} ${edge.orbitY} ${to.x} ${to.y}`
-                        : `M ${from.x} ${from.y} L ${to.x} ${to.y}`
-                    }
-                  />
-                );
-              })}
-            </g>
-
-            <g className="tree-nodes">
+            <g
+              className="tree-nodes"
+              onClick={(event) => selectEventNode(event.target)}
+              onKeyDown={handleTreeNodeKeyDown}
+            >
               {filteredNodeEntries.map(([nodeId, node]) => (
-                <g
+                <circle
                   key={nodeId}
-                  className="tree-node-button"
+                  className={getNodeClassName(node, selectedNodeId === nodeId)}
                   role="button"
                   tabIndex={0}
-                  onClick={() => setSelectedNodeId(nodeId)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      setSelectedNodeId(nodeId);
-                    }
-                  }}
-                  aria-label={`${node.name} ${getNodeType(node)}`}
-                >
-                  <circle
-                    className={`${getNodeClassName(node, selectedNodeId === nodeId)} ${getNodeAffinity(
-                      node,
-                    )}`}
-                    cx={node.x}
-                    cy={node.y}
-                    r={getNodeRadius(node)}
-                  />
-                </g>
+                  data-node-id={nodeId}
+                  aria-label={`${getLocalizedText(node.nameKr, node.name)} ${getNodeType(node)}`}
+                  cx={node.x}
+                  cy={node.y}
+                  r={getNodeRadius(node)}
+                />
               ))}
             </g>
           </svg>
@@ -629,7 +608,10 @@ function PassiveTreeView() {
           <>
             <div className="node-panel-header">
               <span>{getNodeType(selectedNode)}</span>
-              <h2>{selectedNode.name}</h2>
+              <h2>{getLocalizedText(selectedNode.nameKr, selectedNode.name)}</h2>
+              {selectedNode.nameKr && selectedNode.nameKr !== selectedNode.name ? (
+                <p className="node-original">{selectedNode.name}</p>
+              ) : null}
               {selectedNode.ascendancyId ? <p>{selectedNode.ascendancyId}</p> : null}
             </div>
 
@@ -637,9 +619,15 @@ function PassiveTreeView() {
               <section className="info-section accent">
                 <h3>Effects</h3>
                 <ul>
-                  {selectedNode.stats.map((stat) => (
-                    <li key={stat}>{stripStatMarkup(stat)}</li>
-                  ))}
+                  {selectedNode.stats.map((stat, index) => {
+                    const statKr = selectedNode.statsKr?.[index];
+                    return (
+                      <li key={`${stat}:${index}`} className="translated-stat">
+                        <span>{getLocalizedText(statKr, stat)}</span>
+                        {statKr && statKr !== stat ? <small>{stat}</small> : null}
+                      </li>
+                    );
+                  })}
                 </ul>
               </section>
             ) : (
@@ -647,7 +635,17 @@ function PassiveTreeView() {
             )}
 
             {selectedNode.flavourText && selectedNode.flavourText.length > 0 ? (
-              <blockquote>{selectedNode.flavourText.map(stripStatMarkup).join(" ")}</blockquote>
+              <blockquote>
+                {selectedNode.flavourText.map((text, index) => {
+                  const textKr = selectedNode.flavourTextKr?.[index];
+                  return (
+                    <span key={`${text}:${index}`} className="translated-flavour">
+                      <span>{getLocalizedText(textKr, text)}</span>
+                      {textKr && textKr !== text ? <small>{text}</small> : null}
+                    </span>
+                  );
+                })}
+              </blockquote>
             ) : null}
           </>
         ) : (
