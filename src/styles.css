@@ -1027,7 +1027,11 @@ h1 {
   cursor: pointer;
 }
 
-.modifier-button:hover,
+.modifier-button:hover {
+  border-color: rgba(134, 169, 217, 0.34);
+  background: rgba(134, 169, 217, 0.09);
+}
+
 .modifier-button.saved {
   color: #f1dfc3;
   border-color: var(--line-bright);
