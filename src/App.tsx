@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import {
   BookOpen,
   Bookmark,
@@ -376,6 +376,11 @@ function PassiveTreeView() {
   const [selectedClass, setSelectedClass] = useState("all");
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
+  const [panOffset, setPanOffset] = useState({ x: 0, y: 0 });
+  const [isTreeDragging, setIsTreeDragging] = useState(false);
+  const treeSvgRef = useRef<SVGSVGElement | null>(null);
+  const lastDragPointRef = useRef<{ x: number; y: number } | null>(null);
+  const draggedTreeRef = useRef(false);
   const deferredTreeQuery = useDeferredValue(treeQuery);
 
   useEffect(() => {
@@ -443,8 +448,8 @@ function PassiveTreeView() {
   const defaultViewBoxHeight = treeHeight + viewBoxPadding * 2;
   const viewBoxWidth = defaultViewBoxWidth / zoom;
   const viewBoxHeight = defaultViewBoxHeight / zoom;
-  const viewBoxCenterX = treeData ? treeData.min_x + treeWidth / 2 : 0;
-  const viewBoxCenterY = treeData ? treeData.min_y + treeHeight / 2 : 0;
+  const viewBoxCenterX = treeData ? treeData.min_x + treeWidth / 2 + panOffset.x : 0;
+  const viewBoxCenterY = treeData ? treeData.min_y + treeHeight / 2 + panOffset.y : 0;
   const viewBox = treeData
     ? `${viewBoxCenterX - viewBoxWidth / 2} ${
         viewBoxCenterY - viewBoxHeight / 2
@@ -472,9 +477,50 @@ function PassiveTreeView() {
   const visibleLinkPath = visibleLinkPaths.join(" ");
 
   function selectEventNode(target: EventTarget | null) {
+    if (draggedTreeRef.current) return;
     if (!(target instanceof SVGElement)) return;
     const nodeId = target.dataset.nodeId;
     if (nodeId) setSelectedNodeId(nodeId);
+  }
+
+  function handleTreePointerDown(event: React.PointerEvent<SVGSVGElement>) {
+    if (event.button !== 0) return;
+
+    lastDragPointRef.current = { x: event.clientX, y: event.clientY };
+    draggedTreeRef.current = false;
+    setIsTreeDragging(true);
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleTreePointerMove(event: React.PointerEvent<SVGSVGElement>) {
+    const lastDragPoint = lastDragPointRef.current;
+    const svgElement = treeSvgRef.current;
+    if (!lastDragPoint || !svgElement) return;
+
+    const rect = svgElement.getBoundingClientRect();
+    const deltaX = event.clientX - lastDragPoint.x;
+    const deltaY = event.clientY - lastDragPoint.y;
+    if (Math.abs(deltaX) > 2 || Math.abs(deltaY) > 2) {
+      draggedTreeRef.current = true;
+    }
+
+    setPanOffset((currentPanOffset) => ({
+      x: currentPanOffset.x - (deltaX * viewBoxWidth) / rect.width,
+      y: currentPanOffset.y - (deltaY * viewBoxHeight) / rect.height,
+    }));
+    lastDragPointRef.current = { x: event.clientX, y: event.clientY };
+  }
+
+  function stopTreeDrag(event: React.PointerEvent<SVGSVGElement>) {
+    lastDragPointRef.current = null;
+    setIsTreeDragging(false);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+
+    window.setTimeout(() => {
+      draggedTreeRef.current = false;
+    }, 0);
   }
 
   function handleTreeNodeKeyDown(event: React.KeyboardEvent<SVGGElement>) {
@@ -562,7 +608,18 @@ function PassiveTreeView() {
         </div>
 
         <div className="tree-stage">
-          <svg viewBox={viewBox} role="img" aria-label="Path of Exile 2 passive skill tree">
+          <svg
+            ref={treeSvgRef}
+            className={isTreeDragging ? "dragging" : undefined}
+            viewBox={viewBox}
+            role="img"
+            aria-label="Path of Exile 2 passive skill tree"
+            onPointerDown={handleTreePointerDown}
+            onPointerMove={handleTreePointerMove}
+            onPointerUp={stopTreeDrag}
+            onPointerCancel={stopTreeDrag}
+            onPointerLeave={stopTreeDrag}
+          >
             <defs>
               <radialGradient id="treeNodeFill" cx="42%" cy="35%" r="68%">
                 <stop offset="0%" stopColor="#f4d08d" />
