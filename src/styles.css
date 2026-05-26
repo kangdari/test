@@ -448,6 +448,12 @@ blockquote {
   padding: 16px;
 }
 
+.saved-mobile-trigger,
+.saved-scrim,
+.saved-close {
+  display: none;
+}
+
 .saved-header {
   display: flex;
   gap: 10px;
@@ -580,6 +586,93 @@ blockquote {
 
   .control-panel {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .app-shell {
+    padding-bottom: 76px;
+  }
+
+  .saved-panel {
+    position: fixed;
+    right: 10px;
+    bottom: 72px;
+    left: 10px;
+    z-index: 30;
+    display: block;
+    max-height: min(64vh, 520px);
+    padding: 14px;
+    overflow: auto;
+    border-color: var(--line-bright);
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.66);
+    transform: translateY(calc(100% + 96px));
+    transition: transform 180ms ease;
+  }
+
+  .saved-panel.open {
+    transform: translateY(0);
+  }
+
+  .saved-mobile-trigger {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    left: 12px;
+    z-index: 35;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    min-height: 48px;
+    color: #1a130c;
+    border: 1px solid #e3a958;
+    border-radius: 8px;
+    background: var(--gold);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.48);
+    cursor: pointer;
+    font-weight: 750;
+  }
+
+  .saved-mobile-trigger strong {
+    display: grid;
+    min-width: 24px;
+    height: 24px;
+    place-items: center;
+    padding: 0 6px;
+    color: #f3dec0;
+    border-radius: 999px;
+    background: #1a130c;
+    font-size: 0.8rem;
+  }
+
+  .saved-scrim {
+    position: fixed;
+    inset: 0;
+    z-index: 25;
+    display: block;
+    border: 0;
+    background: rgba(0, 0, 0, 0.42);
+    cursor: pointer;
+  }
+
+  .saved-close {
+    display: grid;
+    flex: 0 0 auto;
+    width: 32px;
+    height: 32px;
+    margin-left: auto;
+    place-items: center;
+    color: var(--muted);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  .saved-close:hover {
+    color: #f0dcc0;
+    border-color: var(--line-bright);
   }
 }
 

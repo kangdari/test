@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   BookOpen,
+  Bookmark,
   ExternalLink,
   Globe2,
   Search,
   ShieldQuestion,
   Sparkles,
   Trash2,
+  X,
 } from "lucide-react";
 import { items } from "./generated/items";
 import type { Language, LocalizedItem, UniqueItem } from "./generated/items";
@@ -18,6 +20,8 @@ type SavedModifier = {
   itemBaseType: string;
   slug: string;
 };
+
+const savedModifiersStorageKey = "poe2:saved-explicit-modifiers";
 
 function languageLabel(language: Language) {
   return language === "kr" ? "KR" : "EN";
@@ -53,15 +57,42 @@ function isIncompleteItem(item: UniqueItem) {
   );
 }
 
+function readSavedModifiers() {
+  try {
+    const savedValue = window.localStorage.getItem(savedModifiersStorageKey);
+    if (!savedValue) return [];
+
+    const parsedValue = JSON.parse(savedValue);
+    if (!Array.isArray(parsedValue)) return [];
+
+    return parsedValue.filter((modifier): modifier is SavedModifier => {
+      return (
+        typeof modifier?.id === "string" &&
+        typeof modifier.text === "string" &&
+        typeof modifier.itemName === "string" &&
+        typeof modifier.itemBaseType === "string" &&
+        typeof modifier.slug === "string"
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
 function App() {
   const [language, setLanguage] = useState<Language>("kr");
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState("all");
-  const [savedModifiers, setSavedModifiers] = useState<SavedModifier[]>([]);
+  const [savedModifiers, setSavedModifiers] = useState<SavedModifier[]>(readSavedModifiers);
+  const [savedPanelOpen, setSavedPanelOpen] = useState(false);
 
   useEffect(() => {
     setCategory("all");
   }, [language]);
+
+  useEffect(() => {
+    window.localStorage.setItem(savedModifiersStorageKey, JSON.stringify(savedModifiers));
+  }, [savedModifiers]);
 
   const categories = useMemo(() => {
     return Array.from(
@@ -108,6 +139,7 @@ function App() {
         },
       ];
     });
+    setSavedPanelOpen(true);
   }
 
   function removeModifier(id: string) {
@@ -204,6 +236,9 @@ function App() {
         <SavedModifierPanel
           language={language}
           savedModifiers={savedModifiers}
+          isOpen={savedPanelOpen}
+          onToggleOpen={() => setSavedPanelOpen((isOpen) => !isOpen)}
+          onClose={() => setSavedPanelOpen(false)}
           onRemoveModifier={removeModifier}
         />
       </main>
@@ -334,22 +369,50 @@ function ModifierSection({
 type SavedModifierPanelProps = {
   language: Language;
   savedModifiers: SavedModifier[];
+  isOpen: boolean;
+  onToggleOpen: () => void;
+  onClose: () => void;
   onRemoveModifier: (id: string) => void;
 };
 
 function SavedModifierPanel({
   language,
   savedModifiers,
+  isOpen,
+  onToggleOpen,
+  onClose,
   onRemoveModifier,
 }: SavedModifierPanelProps) {
   return (
-    <aside className="saved-panel" aria-label="Saved explicit modifiers">
+    <>
+      <button
+        type="button"
+        className="saved-mobile-trigger"
+        onClick={onToggleOpen}
+        aria-expanded={isOpen}
+        aria-controls="saved-modifier-panel"
+      >
+        <Bookmark size={17} aria-hidden="true" />
+        저장한 속성
+        <strong>{savedModifiers.length}</strong>
+      </button>
+
+      {isOpen ? <button className="saved-scrim" type="button" onClick={onClose} aria-label="닫기" /> : null}
+
+      <aside
+        id="saved-modifier-panel"
+        className={isOpen ? "saved-panel open" : "saved-panel"}
+        aria-label="Saved explicit modifiers"
+      >
       <div className="saved-header">
         <Globe2 size={18} aria-hidden="true" />
         <div>
           <span>{languageLabel(language)} display</span>
           <strong>저장한 속성 {savedModifiers.length}</strong>
         </div>
+        <button type="button" className="saved-close" onClick={onClose} aria-label="저장한 속성 닫기">
+          <X size={17} aria-hidden="true" />
+        </button>
       </div>
 
       {savedModifiers.length === 0 ? (
@@ -375,7 +438,8 @@ function SavedModifierPanel({
           ))}
         </ul>
       )}
-    </aside>
+      </aside>
+    </>
   );
 }
 
