@@ -24,6 +24,7 @@ type SavedModifier = {
   itemName: string;
   itemBaseType: string;
   slug: string;
+  modifierIndex?: number;
 };
 
 type PassiveTreeClass = {
@@ -247,12 +248,21 @@ function readSavedModifiers() {
         typeof modifier.text === "string" &&
         typeof modifier.itemName === "string" &&
         typeof modifier.itemBaseType === "string" &&
-        typeof modifier.slug === "string"
+        typeof modifier.slug === "string" &&
+        (typeof modifier.modifierIndex === "number" || typeof modifier.modifierIndex === "undefined")
       );
     });
   } catch {
     return [];
   }
+}
+
+function getSavedModifierId(item: UniqueItem, language: Language, modifier: string, modifierIndex: number) {
+  return `${item.slug}:${language}:${modifierIndex}:${modifier}`;
+}
+
+function getLegacySavedModifierId(item: UniqueItem, language: Language, modifier: string) {
+  return `${item.slug}:${language}:${modifier}`;
 }
 
 function App() {
@@ -299,13 +309,14 @@ function App() {
       });
   }, [category, language, query]);
 
-  function saveModifier(item: UniqueItem, modifier: string) {
+  function saveModifier(item: UniqueItem, modifier: string, modifierIndex: number) {
     const local = itemForLanguage(item, language);
-    const id = `${item.slug}:${language}:${modifier}`;
+    const id = getSavedModifierId(item, language, modifier, modifierIndex);
+    const legacyId = getLegacySavedModifierId(item, language, modifier);
 
     setSavedModifiers((current) => {
-      if (current.some((saved) => saved.id === id)) {
-        return current.filter((saved) => saved.id !== id);
+      if (current.some((saved) => saved.id === id || saved.id === legacyId)) {
+        return current.filter((saved) => saved.id !== id && saved.id !== legacyId);
       }
 
       return [
@@ -316,6 +327,7 @@ function App() {
           itemName: local.name,
           itemBaseType: local.baseType,
           slug: item.slug,
+          modifierIndex,
         },
       ];
     });
@@ -1251,7 +1263,7 @@ type ItemCardProps = {
   incomplete: boolean;
   language: Language;
   savedModifierIds: Set<string>;
-  onSaveModifier: (item: UniqueItem, modifier: string) => void;
+  onSaveModifier: (item: UniqueItem, modifier: string, modifierIndex: number) => void;
 };
 
 function ItemCard({
@@ -1322,7 +1334,7 @@ type ModifierSectionProps = {
   language: Language;
   entries: string[];
   savedModifierIds: Set<string>;
-  onSaveModifier: (item: UniqueItem, modifier: string) => void;
+  onSaveModifier: (item: UniqueItem, modifier: string, modifierIndex: number) => void;
 };
 
 function ModifierSection({
@@ -1345,14 +1357,16 @@ function ModifierSection({
     <section className="info-section explicit">
       <h3>Explicit modifiers</h3>
       <ul>
-        {entries.map((entry) => {
-          const saved = savedModifierIds.has(`${item.slug}:${language}:${entry}`);
+        {entries.map((entry, index) => {
+          const id = getSavedModifierId(item, language, entry, index);
+          const legacyId = getLegacySavedModifierId(item, language, entry);
+          const saved = savedModifierIds.has(id) || savedModifierIds.has(legacyId);
           return (
-            <li key={entry}>
+            <li key={id}>
               <button
                 type="button"
                 className={saved ? "modifier-button saved" : "modifier-button"}
-                onClick={() => onSaveModifier(item, entry)}
+                onClick={() => onSaveModifier(item, entry, index)}
                 aria-pressed={saved}
               >
                 {entry}
