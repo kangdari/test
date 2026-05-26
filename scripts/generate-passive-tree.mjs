@@ -44,6 +44,7 @@ const termTranslations = new Map(
     "Critical Hits": "치명타",
     "Critical Hit": "치명타",
     "Elemental Damage": "원소 피해",
+    "Elemental": "원소",
     "Physical Damage": "물리 피해",
     "Fire Damage": "화염 피해",
     "Cold Damage": "냉기 피해",
@@ -84,6 +85,7 @@ const termTranslations = new Map(
     "Spell": "주문",
     "Skill Effect Duration": "스킬 효과 지속시간",
     "Skill Speed": "스킬 속도",
+    "Skills": "스킬",
     "Skill": "스킬",
     "Projectile Damage": "투사체 피해",
     "Projectiles": "투사체",
@@ -101,6 +103,7 @@ const termTranslations = new Map(
     "Resistances": "저항",
     "Resistance": "저항",
     "Block Chance": "막기 확률",
+    "Shield": "방패",
     "Block": "막기",
     "Shock Chance": "감전 확률",
     "Shock": "감전",
@@ -118,6 +121,30 @@ const termTranslations = new Map(
     "Tailwind": "순풍",
     "Onslaught": "맹공",
     "Reservation": "점유",
+    "Efficiency": "효율",
+    "Cooldown": "재사용 대기시간",
+    "Herald": "전령",
+    "Grenade": "수류탄",
+    "Quarterstaves": "육척봉",
+    "Quarterstaff": "육척봉",
+    "Maces": "철퇴",
+    "Mace": "철퇴",
+    "Bows": "활",
+    "Bow": "활",
+    "Close Range": "근거리",
+    "Rare": "희귀",
+    "Unique": "고유",
+    "Fire": "화염",
+    "Cold": "냉기",
+    "Lightning": "번개",
+    "Chaos": "카오스",
+    "Physical": "물리",
+    "Penetrates": "관통",
+    "Penetration": "관통",
+    "Magnitude": "강도",
+    "Chance": "확률",
+    "Rate": "속도",
+    "Reduction": "감소",
     "Rarity": "희귀도",
     "Duration": "지속시간",
     "Recovery": "회복",
@@ -188,9 +215,32 @@ function replaceTerms(value) {
   let translated = String(value ?? "");
   const terms = [...termTranslations.entries()].sort((a, b) => b[0].length - a[0].length);
   for (const [english, korean] of terms) {
-    translated = translated.replace(new RegExp(`\\b${escapeRegExp(english)}\\b`, "g"), korean);
+    translated = translated.replace(new RegExp(`\\b${escapeRegExp(english)}\\b`, "gi"), korean);
   }
-  return translated;
+  return cleanupTranslation(translated);
+}
+
+function cleanupTranslation(value) {
+  return value
+    .replace(/\bincreased\b/gi, "증가")
+    .replace(/\breduced\b/gi, "감소")
+    .replace(/\bmaximum\b/gi, "최대")
+    .replace(/\bgained\b/gi, "획득")
+    .replace(/\bgain\b/gi, "획득")
+    .replace(/\bgrants\b/gi, "부여")
+    .replace(/\bgrant\b/gi, "부여")
+    .replace(/\balso\b/gi, "또한")
+    .replace(/\bagainst\b/gi, "상대로")
+    .replace(/\bor\b/gi, "또는")
+    .replace(/\bat\b/gi, "에서")
+    .replace(/\bwith\b/gi, "사용 시")
+    .replace(/\bof\b/gi, "의")
+    .replace(/\band\b/gi, "및")
+    .replace(/\bfor\b/gi, "대상")
+    .replace(/\byou\b/gi, "플레이어")
+    .replace(/\byour\b/gi, "플레이어의")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function escapeRegExp(value) {
@@ -199,16 +249,31 @@ function escapeRegExp(value) {
 
 function translateStat(value) {
   const cleanValue = translateBracketTerms(stripStatMarkup(value));
+  if (cleanValue.includes("\n")) {
+    return cleanValue.split("\n").map(translateStat).join("\n");
+  }
 
   const directPatterns = [
+    [/^(\d+)% increased chance to (.+)$/i, (_, amount, target) => `${replaceTerms(target)} 확률 ${amount}% 증가`],
+    [/^(\d+)% increased (.+) gained$/i, (_, amount, target) => `${replaceTerms(target)} 획득량 ${amount}% 증가`],
+    [/^(\d+)% chance to (.+) Enemies on Hit$/i, (_, amount, target) => `명중 시 적에게 ${replaceTerms(target)} 유발 확률 ${amount}%`],
+    [/^(\d+)% increased (.+) with (.+)$/i, (_, amount, target, source) => `${replaceTerms(source)} 사용 시 ${replaceTerms(target)} ${amount}% 증가`],
+    [/^(\d+)% increased (.+) at (.+)$/i, (_, amount, target, condition) => `${replaceTerms(condition)}에서 ${replaceTerms(target)} ${amount}% 증가`],
+    [/^(\d+)% increased (.+) of (.+)$/i, (_, amount, target, source) => `${replaceTerms(source)}의 ${replaceTerms(target)} ${amount}% 증가`],
+    [/^(\d+)% increased (.+) against (.+)$/i, (_, amount, target, condition) => `${replaceTerms(condition)} 상대로 ${replaceTerms(target)} ${amount}% 증가`],
     [/^(.+) deal (\d+)% increased Damage$/i, (_, subject, amount) => `${replaceTerms(subject)}의 피해 ${amount}% 증가`],
+    [/^(.+) have (\d+)% increased maximum (.+)$/i, (_, subject, amount, target) => `${replaceTerms(subject)}의 최대 ${replaceTerms(target)} ${amount}% 증가`],
+    [/^(.+) have (\d+)% increased (.+)$/i, (_, subject, amount, target) => `${replaceTerms(subject)}의 ${replaceTerms(target)} ${amount}% 증가`],
+    [/^Damage Penetrates (\d+)% of Enemy (.+)$/i, (_, amount, target) => `적의 ${replaceTerms(target)} ${amount}% 관통`],
+    [/^Damage Penetrates (\d+)% (.+)$/i, (_, amount, target) => `${replaceTerms(target)} ${amount}% 관통`],
+    [/^(\d+)% of (.+) also grants (.+) reduction$/i, (_, amount, source, target) => `${replaceTerms(source)}의 ${amount}%가 ${replaceTerms(target)} 감소에도 적용`],
+    [/^Excess (.+) Recovery from Regeneration is applied to (.+)$/i, (_, source, target) => `재생으로 인한 초과 ${replaceTerms(source)} 회복이 ${replaceTerms(target)}에 적용`],
+    [/^Curses you inflict have infinite Duration$/i, () => "플레이어가 유발한 저주의 지속시간 무한"],
     [/^(\d+)% increased (.+)$/i, (_, amount, target) => `${replaceTerms(target)} ${amount}% 증가`],
     [/^(\d+)% reduced (.+)$/i, (_, amount, target) => `${replaceTerms(target)} ${amount}% 감소`],
     [/^\+(\d+) to (.+)$/i, (_, amount, target) => `${replaceTerms(target)} +${amount}`],
     [/^-(\d+) to (.+)$/i, (_, amount, target) => `${replaceTerms(target)} -${amount}`],
     [/^(\d+)% chance to (.+)$/i, (_, amount, target) => `${replaceTerms(target)} 확률 ${amount}%`],
-    [/^(\d+)% increased chance to (.+)$/i, (_, amount, target) => `${replaceTerms(target)} 확률 ${amount}% 증가`],
-    [/^(\d+)% chance to (.+) Enemies on Hit$/i, (_, amount, target) => `명중 시 적에게 ${replaceTerms(target)} 유발 확률 ${amount}%`],
     [/^Recover (\d+)% of maximum (.+) on Kill$/i, (_, amount, target) => `처치 시 최대 ${replaceTerms(target)}의 ${amount}% 회복`],
     [/^Gain (.+) on Skill use$/i, (_, target) => `스킬 사용 시 ${replaceTerms(target)} 획득`],
     [/^Lose all (.+) when Hit$/i, (_, target) => `명중당하면 모든 ${replaceTerms(target)} 상실`],
@@ -223,15 +288,9 @@ function translateStat(value) {
   }
 
   return replaceTerms(cleanValue)
-    .replace(/\bincreased\b/gi, "증가")
-    .replace(/\breduced\b/gi, "감소")
-    .replace(/\bmaximum\b/gi, "최대")
-    .replace(/\bgained\b/gi, "획득")
-    .replace(/\bgain\b/gi, "획득")
     .replace(/\bon Kill\b/gi, "처치 시")
     .replace(/\bon Hit\b/gi, "명중 시")
     .replace(/\bwhile\b/gi, "~하는 동안")
-    .replace(/\bwith\b/gi, "사용 시")
     .replace(/\s+/g, " ")
     .trim();
 }
