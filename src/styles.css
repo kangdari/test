@@ -460,6 +460,16 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.change-card-header small,
+.change-stat-block small {
+  display: block;
+  margin-top: 5px;
+  color: #9f927e;
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
 .change-id {
   color: var(--muted);
   font-size: 0.78rem;
@@ -534,6 +544,10 @@ h1 {
   color: var(--blue);
   font-size: 0.88rem;
   line-height: 1.45;
+}
+
+.change-stat-block li small {
+  color: #9f927e;
 }
 
 .asset-list {

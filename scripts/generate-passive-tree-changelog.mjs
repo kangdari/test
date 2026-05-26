@@ -2,7 +2,118 @@ import fs from "node:fs";
 
 const previousPath = "data/passive-tree/data-0.4.0.json";
 const currentPath = "data/passive-tree/data.json";
+const compactPath = "public/passive-tree/compact.json";
 const outputPath = "public/passive-tree/changelog.json";
+const poe2dbAutocompleteKrUrl =
+  "https://cdn.poe2db.tw/json/autocomplete_kr.4c60f0f55e394ff9.json";
+
+const manualNameTranslations = new Map(
+  Object.entries({
+    Marauder: "머라우더",
+    Witch: "위치",
+    Ranger: "레인저",
+    Warrior: "전사",
+    Huntress: "헌트리스",
+    Sorceress: "소서리스",
+    Mercenary: "용병",
+    Monk: "몽크",
+    Druid: "드루이드",
+    Deadeye: "데드아이",
+    Pathfinder: "패스파인더",
+    Amazon: "아마존",
+    Ritualist: "의식술사",
+    Invoker: "인보커",
+    "Acolyte of Chayula": "차율라의 수련자",
+    "Spirit Walker": "스피릿 워커",
+    "Martial Artist": "무술가",
+  }),
+);
+
+const termTranslations = new Map(
+  Object.entries({
+    "Critical Damage Bonus": "치명타 피해 보너스",
+    "Critical Hit Chance": "치명타 확률",
+    "Elemental Damage": "원소 피해",
+    "Physical Damage": "물리 피해",
+    "Fire Damage": "화염 피해",
+    "Cold Damage": "냉기 피해",
+    "Lightning Damage": "번개 피해",
+    "Chaos Damage": "카오스 피해",
+    "Ailment Threshold": "상태 이상 한계치",
+    "Energy Shield Recharge": "에너지 보호막 재충전",
+    "Energy Shield": "에너지 보호막",
+    "Evasion Rating": "회피",
+    "Armour Break": "방어도 파괴",
+    Armour: "방어도",
+    Accuracy: "정확도",
+    "Maximum Life": "최대 생명력",
+    "maximum Life": "최대 생명력",
+    Life: "생명력",
+    "Maximum Mana": "최대 마나",
+    "maximum Mana": "최대 마나",
+    Mana: "마나",
+    Spirit: "정신력",
+    Strength: "힘",
+    Dexterity: "민첩",
+    Intelligence: "지능",
+    Attributes: "능력치",
+    "Attack Damage": "공격 피해",
+    "Attack Speed": "공격 속도",
+    Attack: "공격",
+    "Spell Damage": "주문 피해",
+    "Cast Speed": "시전 속도",
+    Spell: "주문",
+    "Skill Effect Duration": "스킬 효과 지속시간",
+    Skills: "스킬",
+    Skill: "스킬",
+    Projectile: "투사체",
+    "Melee Damage": "근접 피해",
+    Melee: "근접",
+    "Area of Effect": "효과 범위",
+    Area: "범위",
+    Effect: "효과",
+    Minions: "소환수",
+    Minion: "소환수",
+    Companions: "동료",
+    Companion: "동료",
+    Resistances: "저항",
+    Resistance: "저항",
+    "Block chance": "막기 확률",
+    Block: "막기",
+    Shield: "방패",
+    Deflection: "튕겨내기",
+    Deflect: "튕겨내기",
+    Shock: "감전",
+    Freeze: "동결",
+    Ignite: "점화",
+    Poison: "중독",
+    Bleeding: "출혈",
+    Chill: "냉각",
+    "Stun Threshold": "기절 한계치",
+    Stun: "기절",
+    Curse: "저주",
+    Onslaught: "맹공",
+    Reservation: "점유",
+    Efficiency: "효율",
+    Cooldown: "재사용 대기시간",
+    Fire: "화염",
+    Cold: "냉기",
+    Lightning: "번개",
+    Chaos: "카오스",
+    Physical: "물리",
+    Damage: "피해",
+    Duration: "지속시간",
+    Recovery: "회복",
+    Recoup: "피해 회생",
+    Recharge: "재충전",
+    Enemies: "적",
+    Enemy: "적",
+    Allies: "동료",
+    Kill: "처치",
+    Hit: "명중",
+    Hits: "명중",
+  }),
+);
 
 const meaningfulNodeFields = new Set([
   "name",
@@ -23,6 +134,129 @@ function stripStatMarkup(value) {
     .replace(/\[([^\]]+)\]/g, "$1");
 }
 
+function normalizeName(value) {
+  return String(value)
+    .normalize("NFKD")
+    .replace(/%2C/gi, ",")
+    .replace(/_/g, " ")
+    .replace(/['’.,:()\-]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
+async function loadPoe2dbPassiveNameTranslations() {
+  try {
+    const response = await fetch(poe2dbAutocompleteKrUrl, {
+      headers: {
+        referer: "https://poe2db.tw/kr/",
+        "user-agent": "Mozilla/5.0",
+      },
+    });
+    if (!response.ok) throw new Error(`PoE2DB autocomplete returned ${response.status}`);
+
+    const autocompleteItems = await response.json();
+    const translations = new Map();
+    for (const item of autocompleteItems) {
+      if (item?.desc !== "Passive" || !item.label || !item.value) continue;
+      translations.set(normalizeName(item.value), item.label);
+    }
+    return translations;
+  } catch (error) {
+    console.warn(`Could not load PoE2DB Korean passive names: ${error.message}`);
+    return new Map();
+  }
+}
+
+function translateName(value, passiveNameTranslations) {
+  if (!value) return "";
+  return passiveNameTranslations.get(normalizeName(value)) ?? manualNameTranslations.get(value) ?? value;
+}
+
+function getTranslatedTerm(value) {
+  return termTranslations.get(value) ?? manualNameTranslations.get(value) ?? value;
+}
+
+function translateBracketTerms(value) {
+  return String(value ?? "")
+    .replace(/\[([^\]|]+)\|([^\]]+)\]/g, (_, key, label) => {
+      return getTranslatedTerm(label) || getTranslatedTerm(key);
+    })
+    .replace(/\[([^\]]+)\]/g, (_, label) => getTranslatedTerm(label));
+}
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function replaceTerms(value) {
+  let translated = String(value ?? "");
+  const exactTerm = [...termTranslations.entries()].find(
+    ([english]) => english.toLowerCase() === translated.toLowerCase(),
+  );
+  if (exactTerm) return exactTerm[1];
+
+  const terms = [...termTranslations.entries()].sort((a, b) => b[0].length - a[0].length);
+  for (const [english, korean] of terms) {
+    translated = translated.replace(new RegExp(`\\b${escapeRegExp(english)}\\b`, "gi"), korean);
+  }
+  return translated
+    .replace(/\bincreased\b/gi, "증가")
+    .replace(/\breduced\b/gi, "감소")
+    .replace(/\bmaximum\b/gi, "최대")
+    .replace(/\bgain\b/gi, "획득")
+    .replace(/\bgrants\b/gi, "부여")
+    .replace(/\balso\b/gi, "또한")
+    .replace(/\bagainst\b/gi, "상대로")
+    .replace(/\bwith\b/gi, "사용 시")
+    .replace(/\bof\b/gi, "의")
+    .replace(/\band\b/gi, "및")
+    .replace(/\byou\b/gi, "플레이어")
+    .replace(/\byour\b/gi, "플레이어의")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function translateStat(value) {
+  const cleanValue = translateBracketTerms(stripStatMarkup(value));
+  if (cleanValue.includes("\n")) {
+    return cleanValue.split("\n").map(translateStat).join("\n");
+  }
+
+  const directPatterns = [
+    [/^(\d+)% increased (.+)$/i, (_, amount, target) => `${replaceTerms(target)} ${amount}% 증가`],
+    [/^(\d+)% reduced (.+)$/i, (_, amount, target) => `${replaceTerms(target)} ${amount}% 감소`],
+    [/^(\d+)% faster start of (.+)$/i, (_, amount, target) => `${replaceTerms(target)} 시작 속도 ${amount}% 가속`],
+    [/^(\d+)% slower start of (.+)$/i, (_, amount, target) => `${replaceTerms(target)} 시작 속도 ${amount}% 감속`],
+    [/^\+(\d+)%? to (.+)$/i, (_, amount, target) => `${replaceTerms(target)} +${amount}`],
+    [/^-(\d+)%? to (.+)$/i, (_, amount, target) => `${replaceTerms(target)} -${amount}`],
+    [/^(\d+)% chance to (.+)$/i, (_, amount, target) => `${replaceTerms(target)} 확률 ${amount}%`],
+    [/^(.+) have (\d+)% increased (.+)$/i, (_, subject, amount, target) => `${replaceTerms(subject)}의 ${replaceTerms(target)} ${amount}% 증가`],
+    [/^(.+) deal (\d+)% increased Damage$/i, (_, subject, amount) => `${replaceTerms(subject)}의 피해 ${amount}% 증가`],
+    [/^Gain (.+)$/i, (_, target) => `${replaceTerms(target)} 획득`],
+    [/^Grants Skill: (.+)$/i, (_, target) => `스킬 부여: ${replaceTerms(target)}`],
+  ];
+
+  for (const [pattern, render] of directPatterns) {
+    const match = cleanValue.match(pattern);
+    if (match) return render(...match);
+  }
+
+  return replaceTerms(cleanValue)
+    .replace(/\bon Kill\b/gi, "처치 시")
+    .replace(/\bon Hit\b/gi, "명중 시")
+    .replace(/\bwhile\b/gi, "~하는 동안")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function preferPoe2dbName(value, passiveNameTranslations, compactNodeData) {
+  const translatedName = translateName(value, passiveNameTranslations);
+  if (translatedName && translatedName !== value) return translatedName;
+  if (compactNodeData?.nameKr && !compactNodeData.nameKr.includes(" 의 ")) return compactNodeData.nameKr;
+  return value || "(이름 없음)";
+}
+
 function comparable(value) {
   return JSON.stringify(value ?? null);
 }
@@ -31,12 +265,15 @@ function sortNumericText(values) {
   return [...values].sort((a, b) => Number(a) - Number(b));
 }
 
-function compactNode(nodeId, node) {
+function compactNode(nodeId, node, passiveNameTranslations, compactNodeData) {
+  const stats = (node.stats ?? []).map(stripStatMarkup);
   return {
     id: nodeId,
     name: node.name || "(이름 없음)",
+    nameKr: preferPoe2dbName(node.name, passiveNameTranslations, compactNodeData),
     group: node.group,
-    stats: (node.stats ?? []).map(stripStatMarkup),
+    stats,
+    statsKr: stats.map(translateStat),
     isNotable: node.isNotable || undefined,
     isKeystone: node.isKeystone || undefined,
     isJewelSocket: node.isJewelSocket || /Jewel Socket/i.test(node.name ?? "") || undefined,
@@ -78,7 +315,7 @@ function edgeKey(edge) {
   });
 }
 
-function buildClassChanges(previousClasses, currentClasses) {
+function buildClassChanges(previousClasses, currentClasses, passiveNameTranslations) {
   return previousClasses.flatMap((previousClass, index) => {
     const currentClass = currentClasses[index];
     if (!currentClass || comparable(previousClass) === comparable(currentClass)) return [];
@@ -86,14 +323,17 @@ function buildClassChanges(previousClasses, currentClasses) {
     return [
       {
         className: previousClass.name,
+        classNameKr: translateName(previousClass.name, passiveNameTranslations),
         before: (previousClass.ascendancies ?? []).map((entry) => ({
           id: entry.id,
           name: entry.name,
+          nameKr: translateName(entry.name, passiveNameTranslations),
           image: entry.image,
         })),
         after: (currentClass.ascendancies ?? []).map((entry) => ({
           id: entry.id,
           name: entry.name,
+          nameKr: translateName(entry.name, passiveNameTranslations),
           image: entry.image,
         })),
       },
@@ -103,6 +343,8 @@ function buildClassChanges(previousClasses, currentClasses) {
 
 const previousData = JSON.parse(fs.readFileSync(previousPath, "utf8"));
 const currentData = JSON.parse(fs.readFileSync(currentPath, "utf8"));
+const compactData = fs.existsSync(compactPath) ? JSON.parse(fs.readFileSync(compactPath, "utf8")) : { nodes: {} };
+const passiveNameTranslations = await loadPoe2dbPassiveNameTranslations();
 
 const previousGroupIds = new Set(Object.keys(previousData.groups));
 const currentGroupIds = new Set(Object.keys(currentData.groups));
@@ -130,14 +372,19 @@ const changedNodes = sortNumericText([...currentNodeIds].filter((nodeId) => prev
       {
         id: nodeId,
         name: after.name || before.name || "(이름 없음)",
+        nameKr: preferPoe2dbName(after.name || before.name, passiveNameTranslations, compactData.nodes[nodeId]),
         beforeName: before.name || "(이름 없음)",
+        beforeNameKr: preferPoe2dbName(before.name, passiveNameTranslations),
         afterName: after.name || "(이름 없음)",
+        afterNameKr: preferPoe2dbName(after.name, passiveNameTranslations, compactData.nodes[nodeId]),
         group: after.group ?? before.group,
         type: classifyNode(after),
         fields,
         summary: describeChange(fields, before, after),
         beforeStats: (before.stats ?? []).map(stripStatMarkup),
+        beforeStatsKr: (before.stats ?? []).map(translateStat),
         afterStats: (after.stats ?? []).map(stripStatMarkup),
+        afterStatsKr: (after.stats ?? []).map(translateStat),
       },
     ];
   });
@@ -181,17 +428,17 @@ const changelog = {
     },
   },
   addedNodes: addedNodeIds.map((nodeId) => ({
-    ...compactNode(nodeId, currentData.nodes[nodeId]),
+    ...compactNode(nodeId, currentData.nodes[nodeId], passiveNameTranslations, compactData.nodes[nodeId]),
     type: classifyNode(currentData.nodes[nodeId]),
   })),
   removedNodes: removedNodeIds.map((nodeId) => ({
-    ...compactNode(nodeId, previousData.nodes[nodeId]),
+    ...compactNode(nodeId, previousData.nodes[nodeId], passiveNameTranslations),
     type: classifyNode(previousData.nodes[nodeId]),
   })),
   changedNodes,
-  classChanges: buildClassChanges(previousData.classes, currentData.classes),
+  classChanges: buildClassChanges(previousData.classes, currentData.classes, passiveNameTranslations),
   addedJewelSlots: sortNumericText([...currentJewelSlots].filter((slotId) => !previousJewelSlots.has(slotId))).map(
-    (slotId) => compactNode(slotId, currentData.nodes[slotId]),
+    (slotId) => compactNode(slotId, currentData.nodes[slotId], passiveNameTranslations, compactData.nodes[slotId]),
   ),
   addedSkillOverrides: sortNumericText(
     [...currentOverrideIds].filter((overrideId) => !previousOverrideIds.has(overrideId)),
@@ -199,7 +446,9 @@ const changelog = {
     id: overrideId,
     overrides: currentData.skillOverrides[overrideId].map((override) => ({
       name: override.name,
+      nameKr: translateName(override.name, passiveNameTranslations),
       stats: (override.stats ?? []).map(stripStatMarkup),
+      statsKr: (override.stats ?? []).map(translateStat),
       isNotable: override.isNotable || undefined,
     })),
   })),

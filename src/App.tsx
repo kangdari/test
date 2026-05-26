@@ -74,15 +74,21 @@ type PassiveNodeTypeFilter = "all" | "notable" | "keystone" | "ascendancy";
 type ChangelogNode = {
   id: string;
   name: string;
+  nameKr?: string;
   beforeName?: string;
+  beforeNameKr?: string;
   afterName?: string;
+  afterNameKr?: string;
   group?: number;
   type: string;
   fields?: string[];
   summary?: string;
   stats?: string[];
+  statsKr?: string[];
   beforeStats?: string[];
+  beforeStatsKr?: string[];
   afterStats?: string[];
+  afterStatsKr?: string[];
   isNotable?: boolean;
   isKeystone?: boolean;
   isJewelSocket?: boolean;
@@ -102,13 +108,14 @@ type ChangelogData = {
   changedNodes: ChangelogNode[];
   classChanges: {
     className: string;
-    before: { id: string; name?: string | null; image?: string | null }[];
-    after: { id: string; name?: string | null; image?: string | null }[];
+    classNameKr?: string;
+    before: { id: string; name?: string | null; nameKr?: string | null; image?: string | null }[];
+    after: { id: string; name?: string | null; nameKr?: string | null; image?: string | null }[];
   }[];
   addedJewelSlots: ChangelogNode[];
   addedSkillOverrides: {
     id: string;
-    overrides: { name: string; stats: string[]; isNotable?: boolean }[];
+    overrides: { name: string; nameKr?: string; stats: string[]; statsKr?: string[]; isNotable?: boolean }[];
   }[];
   assetChanges: string[];
 };
@@ -492,13 +499,19 @@ function PassiveTreeChangelogView() {
       return [
         node.id,
         node.name,
+        node.nameKr,
         node.beforeName,
+        node.beforeNameKr,
         node.afterName,
+        node.afterNameKr,
         node.summary,
         node.type,
         ...(node.stats ?? []),
+        ...(node.statsKr ?? []),
         ...(node.beforeStats ?? []),
+        ...(node.beforeStatsKr ?? []),
         ...(node.afterStats ?? []),
+        ...(node.afterStatsKr ?? []),
       ]
         .filter(Boolean)
         .join(" ")
@@ -648,7 +661,16 @@ function ChangelogNodeList({
           <div className="change-card-header">
             <div>
               <span className="change-id">#{node.id}</span>
-              <h3>{mode === "changed" ? node.afterName : node.name}</h3>
+              <h3>
+                {mode === "changed"
+                  ? getLocalizedText(node.afterNameKr, node.afterName ?? node.name)
+                  : getLocalizedText(node.nameKr, node.name)}
+              </h3>
+              {mode === "changed" && node.afterNameKr && node.afterNameKr !== node.afterName ? (
+                <small>{node.afterName}</small>
+              ) : mode !== "changed" && node.nameKr && node.nameKr !== node.name ? (
+                <small>{node.name}</small>
+              ) : null}
             </div>
             <span className="change-type">{node.summary ?? getChangelogTypeLabel(node.type)}</span>
           </div>
@@ -661,11 +683,29 @@ function ChangelogNodeList({
 
           {mode === "changed" ? (
             <div className="diff-columns">
-              <ChangeStatBlock title="0.4.0" name={node.beforeName} stats={node.beforeStats} />
-              <ChangeStatBlock title="0.5.0" name={node.afterName} stats={node.afterStats} />
+              <ChangeStatBlock
+                title="0.4.0"
+                name={node.beforeName}
+                nameKr={node.beforeNameKr}
+                stats={node.beforeStats}
+                statsKr={node.beforeStatsKr}
+              />
+              <ChangeStatBlock
+                title="0.5.0"
+                name={node.afterName}
+                nameKr={node.afterNameKr}
+                stats={node.afterStats}
+                statsKr={node.afterStatsKr}
+              />
             </div>
           ) : (
-            <ChangeStatBlock title={mode === "added" ? "추가 효과" : "삭제 전 효과"} stats={node.stats} />
+            <ChangeStatBlock
+              title={mode === "added" ? "추가 효과" : "삭제 전 효과"}
+              name={node.name}
+              nameKr={node.nameKr}
+              stats={node.stats}
+              statsKr={node.statsKr}
+            />
           )}
         </article>
       ))}
@@ -676,20 +716,32 @@ function ChangelogNodeList({
 function ChangeStatBlock({
   title,
   name,
+  nameKr,
   stats = [],
+  statsKr = [],
 }: {
   title: string;
   name?: string;
+  nameKr?: string;
   stats?: string[];
+  statsKr?: string[];
 }) {
   return (
     <section className="change-stat-block">
       <h4>{title}</h4>
-      {name ? <p>{name}</p> : null}
+      {name ? (
+        <p>
+          {getLocalizedText(nameKr, name)}
+          {nameKr && nameKr !== name ? <small>{name}</small> : null}
+        </p>
+      ) : null}
       {stats.length > 0 ? (
         <ul>
           {stats.map((stat, index) => (
-            <li key={`${stat}:${index}`}>{stat}</li>
+            <li key={`${stat}:${index}`} className="translated-stat">
+              <span>{getLocalizedText(statsKr[index], stat)}</span>
+              {statsKr[index] && statsKr[index] !== stat ? <small>{stat}</small> : null}
+            </li>
           ))}
         </ul>
       ) : (
@@ -707,7 +759,10 @@ function ClassChangeList({ changes }: { changes: ChangelogData["classChanges"] }
           <div className="change-card-header">
             <div>
               <span className="change-id">Class</span>
-              <h3>{change.className}</h3>
+              <h3>{getLocalizedText(change.classNameKr, change.className)}</h3>
+              {change.classNameKr && change.classNameKr !== change.className ? (
+                <small>{change.className}</small>
+              ) : null}
             </div>
             <span className="change-type">전직 데이터 변경</span>
           </div>
@@ -726,7 +781,7 @@ function AscendancyBlock({
   entries,
 }: {
   title: string;
-  entries: { id: string; name?: string | null; image?: string | null }[];
+  entries: { id: string; name?: string | null; nameKr?: string | null; image?: string | null }[];
 }) {
   return (
     <section className="change-stat-block">
@@ -735,7 +790,8 @@ function AscendancyBlock({
         <ul>
           {entries.map((entry) => (
             <li key={entry.id}>
-              {entry.id}: {entry.name ?? "비활성/미공개"}
+              {entry.id}: {getLocalizedText(entry.nameKr ?? undefined, entry.name ?? "비활성/미공개")}
+              {entry.nameKr && entry.nameKr !== entry.name ? <small>{entry.name}</small> : null}
             </li>
           ))}
         </ul>
@@ -754,7 +810,15 @@ function SkillOverrideList({ overrides }: { overrides: ChangelogData["addedSkill
           <div className="change-card-header">
             <div>
               <span className="change-id">Node #{entry.id}</span>
-              <h3>{entry.overrides[0]?.name ?? "Skill override"}</h3>
+              <h3>
+                {getLocalizedText(
+                  entry.overrides[0]?.nameKr,
+                  entry.overrides[0]?.name ?? "Skill override",
+                )}
+              </h3>
+              {entry.overrides[0]?.nameKr && entry.overrides[0].nameKr !== entry.overrides[0].name ? (
+                <small>{entry.overrides[0].name}</small>
+              ) : null}
             </div>
             <span className="change-type">신규 오버라이드</span>
           </div>
@@ -763,6 +827,7 @@ function SkillOverrideList({ overrides }: { overrides: ChangelogData["addedSkill
               key={`${entry.id}:${index}`}
               title={override.isNotable ? "Notable override" : "Override"}
               stats={override.stats}
+              statsKr={override.statsKr}
             />
           ))}
         </article>
