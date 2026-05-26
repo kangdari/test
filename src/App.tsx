@@ -247,6 +247,34 @@ function getLegacySavedModifierId(item: UniqueItem, language: Language, modifier
   return `${item.slug}:${language}:${modifier}`;
 }
 
+function getSavedModifierIdentity(item: UniqueItem, language: Language, modifier: string, modifierIndex: number) {
+  return {
+    id: getSavedModifierId(item, language, modifier, modifierIndex),
+    legacyId: getLegacySavedModifierId(item, language, modifier),
+    slug: item.slug,
+    language,
+    modifier,
+    modifierIndex,
+  };
+}
+
+type SavedModifierIdentity = ReturnType<typeof getSavedModifierIdentity>;
+
+function savedModifierMatchesIdentity(saved: SavedModifier, identity: SavedModifierIdentity) {
+  return (
+    saved.id === identity.id ||
+    saved.id === identity.legacyId ||
+    (saved.slug === identity.slug &&
+      saved.language === identity.language &&
+      saved.text === identity.modifier &&
+      saved.modifierIndex === identity.modifierIndex)
+  );
+}
+
+function removeSavedModifierById(modifiers: SavedModifier[], id: string) {
+  return modifiers.filter((modifier) => modifier.id !== id);
+}
+
 function isLanguage(value: unknown): value is Language {
   return value === "kr" || value === "en";
 }
@@ -384,18 +412,19 @@ function App() {
 
   function saveModifier(item: UniqueItem, modifier: string, modifierIndex: number) {
     const local = itemForLanguage(item, language);
-    const id = getSavedModifierId(item, language, modifier, modifierIndex);
-    const legacyId = getLegacySavedModifierId(item, language, modifier);
+    const identity = getSavedModifierIdentity(item, language, modifier, modifierIndex);
 
     setSavedModifiers((current) => {
-      if (current.some((saved) => saved.id === id || saved.id === legacyId)) {
-        return current.filter((saved) => saved.id !== id && saved.id !== legacyId);
+      const savedModifier = current.find((saved) => savedModifierMatchesIdentity(saved, identity));
+
+      if (savedModifier) {
+        return removeSavedModifierById(current, savedModifier.id);
       }
 
       return [
         ...current,
         {
-          id,
+          id: identity.id,
           text: modifier,
           itemName: local.name,
           itemBaseType: local.baseType,
@@ -408,7 +437,7 @@ function App() {
   }
 
   function removeModifier(id: string) {
-    setSavedModifiers((current) => current.filter((modifier) => modifier.id !== id));
+    setSavedModifiers((current) => removeSavedModifierById(current, id));
   }
 
   return (
