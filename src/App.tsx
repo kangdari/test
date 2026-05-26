@@ -304,7 +304,10 @@ function App() {
     const id = `${item.slug}:${language}:${modifier}`;
 
     setSavedModifiers((current) => {
-      if (current.some((saved) => saved.id === id)) return current;
+      if (current.some((saved) => saved.id === id)) {
+        return current.filter((saved) => saved.id !== id);
+      }
+
       return [
         ...current,
         {

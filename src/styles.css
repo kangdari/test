@@ -1255,12 +1255,16 @@ blockquote {
     overflow: auto;
     border-color: var(--line-bright);
     box-shadow: 0 22px 60px rgba(0, 0, 0, 0.66);
+    pointer-events: none;
     transform: translateY(calc(100% + 96px));
     transition: transform 180ms ease;
+    visibility: hidden;
   }
 
   .saved-panel.open {
+    pointer-events: auto;
     transform: translateY(0);
+    visibility: visible;
   }
 
   .saved-mobile-trigger {
