@@ -24,6 +24,7 @@ type SavedModifier = {
   itemName: string;
   itemBaseType: string;
   slug: string;
+  language?: Language;
   modifierIndex?: number;
 };
 
@@ -234,6 +235,87 @@ function getChangelogTypeLabel(type: string) {
   return labels[type] ?? type;
 }
 
+function buildSavedModifierId(slug: string, language: Language, modifier: string, modifierIndex: number) {
+  return `${slug}:${language}:${modifierIndex}:${modifier}`;
+}
+
+function getSavedModifierId(item: UniqueItem, language: Language, modifier: string, modifierIndex: number) {
+  return buildSavedModifierId(item.slug, language, modifier, modifierIndex);
+}
+
+function getLegacySavedModifierId(item: UniqueItem, language: Language, modifier: string) {
+  return `${item.slug}:${language}:${modifier}`;
+}
+
+function isLanguage(value: unknown): value is Language {
+  return value === "kr" || value === "en";
+}
+
+function parseSavedModifierId(id: string) {
+  const [slug, language, indexText, ...modifierParts] = id.split(":");
+  const parsedLanguage = isLanguage(language) ? language : undefined;
+  const parsedIndex = Number(indexText);
+
+  return {
+    slug,
+    language: parsedLanguage,
+    modifierIndex: Number.isInteger(parsedIndex) ? parsedIndex : undefined,
+    modifierText: modifierParts.length > 0 ? modifierParts.join(":") : indexText,
+  };
+}
+
+function normalizeSavedModifier(modifier: unknown): SavedModifier | null {
+  if (typeof modifier !== "object" || modifier === null) {
+    return null;
+  }
+
+  const savedModifier = modifier as Partial<SavedModifier>;
+
+  if (
+    typeof savedModifier.id !== "string" ||
+    typeof savedModifier.text !== "string" ||
+    typeof savedModifier.itemName !== "string" ||
+    typeof savedModifier.itemBaseType !== "string" ||
+    typeof savedModifier.slug !== "string" ||
+    (typeof savedModifier.modifierIndex !== "number" && typeof savedModifier.modifierIndex !== "undefined")
+  ) {
+    return null;
+  }
+
+  const parsedId = parseSavedModifierId(savedModifier.id);
+  const language = isLanguage(savedModifier.language) ? savedModifier.language : parsedId.language;
+  const item = items.find((entry) => entry.slug === savedModifier.slug || entry.slug === parsedId.slug);
+
+  if (!item || !language) {
+    return savedModifier as SavedModifier;
+  }
+
+  const local = itemForLanguage(item, language);
+  const storedIndex = savedModifier.modifierIndex ?? parsedId.modifierIndex;
+  const modifierIndex =
+    typeof storedIndex === "number" && local.explicitModifiers[storedIndex] === savedModifier.text
+      ? storedIndex
+      : local.explicitModifiers.findIndex((entry) => entry === savedModifier.text);
+
+  if (modifierIndex < 0) {
+    return {
+      ...(savedModifier as SavedModifier),
+      language,
+      slug: item.slug,
+    };
+  }
+
+  return {
+    id: buildSavedModifierId(item.slug, language, savedModifier.text, modifierIndex),
+    text: savedModifier.text,
+    itemName: local.name,
+    itemBaseType: local.baseType,
+    slug: item.slug,
+    language,
+    modifierIndex,
+  };
+}
+
 function readSavedModifiers() {
   try {
     const savedValue = window.localStorage.getItem(savedModifiersStorageKey);
@@ -242,27 +324,18 @@ function readSavedModifiers() {
     const parsedValue = JSON.parse(savedValue);
     if (!Array.isArray(parsedValue)) return [];
 
-    return parsedValue.filter((modifier): modifier is SavedModifier => {
-      return (
-        typeof modifier?.id === "string" &&
-        typeof modifier.text === "string" &&
-        typeof modifier.itemName === "string" &&
-        typeof modifier.itemBaseType === "string" &&
-        typeof modifier.slug === "string" &&
-        (typeof modifier.modifierIndex === "number" || typeof modifier.modifierIndex === "undefined")
-      );
-    });
+    const normalizedModifiers = parsedValue
+      .map(normalizeSavedModifier)
+      .filter((modifier): modifier is SavedModifier => Boolean(modifier));
+
+    return Array.from(
+      normalizedModifiers
+        .reduce((modifiersById, modifier) => modifiersById.set(modifier.id, modifier), new Map<string, SavedModifier>())
+        .values(),
+    );
   } catch {
     return [];
   }
-}
-
-function getSavedModifierId(item: UniqueItem, language: Language, modifier: string, modifierIndex: number) {
-  return `${item.slug}:${language}:${modifierIndex}:${modifier}`;
-}
-
-function getLegacySavedModifierId(item: UniqueItem, language: Language, modifier: string) {
-  return `${item.slug}:${language}:${modifier}`;
 }
 
 function App() {
@@ -327,6 +400,7 @@ function App() {
           itemName: local.name,
           itemBaseType: local.baseType,
           slug: item.slug,
+          language,
           modifierIndex,
         },
       ];
@@ -1359,8 +1433,7 @@ function ModifierSection({
       <ul>
         {entries.map((entry, index) => {
           const id = getSavedModifierId(item, language, entry, index);
-          const legacyId = getLegacySavedModifierId(item, language, entry);
-          const saved = savedModifierIds.has(id) || savedModifierIds.has(legacyId);
+          const saved = savedModifierIds.has(id);
           return (
             <li key={id}>
               <button
