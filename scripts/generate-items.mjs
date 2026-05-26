@@ -1,0 +1,221 @@
+import { access, mkdir, readFile, writeFile } from "node:fs/promises";
+import path from "node:path";
+
+const input = {
+  kr: "content/unique-items-kr.md",
+  en: "content/unique-items-en.md",
+};
+
+const outFile = "src/generated/items.ts";
+
+const headingPattern = /^##\s+(.+)$/gm;
+
+function slugFromSource(source) {
+  const rawSource = source.split("/").filter(Boolean).at(-1) ?? source;
+  const raw = decodeURIComponent(rawSource);
+  return raw
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/['’]/g, "")
+    .replace(/_/g, "-")
+    .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeSourceKey(source) {
+  return source.split("/").filter(Boolean).at(-1) ?? source;
+}
+
+function extractMeta(section, label) {
+  const match = section.match(new RegExp(`^- ${label}:\\s*(.+)$`, "m"));
+  return match?.[1]?.trim() ?? "";
+}
+
+function extractImage(section) {
+  const match = section.match(/!\[\[images\/(.+?)\]\]/);
+  return match?.[1]?.trim() ?? "";
+}
+
+function getBlock(section, title) {
+  const lines = section.split("\n");
+  const start = lines.findIndex((line) => line.trim() === `### ${title}`);
+  if (start === -1) {
+    return "";
+  }
+
+  const block = [];
+  for (const line of lines.slice(start + 1)) {
+    if (line.startsWith("### ") || line.startsWith("## ")) {
+      break;
+    }
+    block.push(line);
+  }
+
+  return block.join("\n").trim();
+}
+
+function listBlock(section, title) {
+  return getBlock(section, title)
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("- "))
+    .map((line) => line.slice(2).trim())
+    .filter(Boolean);
+}
+
+function flavourBlock(section) {
+  return getBlock(section, "Flavour text")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith(">"))
+    .map((line) => line.replace(/^>\s?/, ""))
+    .join("\n")
+    .trim();
+}
+
+function attributesBlock(section) {
+  return getBlock(section, "poe2db attributes")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith("|") && !line.includes("---"))
+    .slice(1)
+    .map((line) => line.split("|").slice(1, -1).map((cell) => cell.trim()))
+    .filter((cells) => cells.length >= 2 && cells[0] && cells[1])
+    .map(([name, value]) => ({ name, value }));
+}
+
+function parseMarkdown(markdown, language) {
+  const headings = [...markdown.matchAll(headingPattern)];
+
+  return headings.map((heading, index) => {
+    const start = heading.index ?? 0;
+    const end = headings[index + 1]?.index ?? markdown.length;
+    const section = markdown.slice(start, end).trim();
+    const source = extractMeta(section, "Source");
+    const imageFile = extractImage(section);
+    const properties = listBlock(section, "Properties");
+
+    return {
+      language,
+      sourceKey: normalizeSourceKey(source),
+      slug: slugFromSource(source),
+      title: heading[1].trim(),
+      source,
+      name: extractMeta(section, "Name") || heading[1].trim(),
+      baseType: extractMeta(section, "Base type"),
+      imageFile,
+      imageUrl: extractMeta(section, "Image URL"),
+      category: properties[0] ?? "",
+      properties,
+      requirements: listBlock(section, "Requirements"),
+      implicitModifiers: listBlock(section, "Implicit modifiers"),
+      explicitModifiers: listBlock(section, "Explicit modifiers"),
+      flavourText: flavourBlock(section),
+      attributes: attributesBlock(section),
+    };
+  });
+}
+
+async function exists(filePath) {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const [krMarkdown, enMarkdown] = await Promise.all([
+  readFile(input.kr, "utf8"),
+  readFile(input.en, "utf8"),
+]);
+
+const krItems = parseMarkdown(krMarkdown, "kr");
+const enItems = parseMarkdown(enMarkdown, "en");
+const enByKey = new Map(enItems.map((item) => [item.sourceKey, item]));
+
+const items = await Promise.all(
+  krItems.map(async (kr) => {
+    const en = enByKey.get(kr.sourceKey);
+    const imagePath = kr.imageFile ? `/item-images/${kr.imageFile}` : "";
+    const hasImage = imagePath
+      ? await exists(path.join("public", "item-images", kr.imageFile))
+      : false;
+
+    return {
+      slug: kr.slug,
+      sourceKey: kr.sourceKey,
+      imagePath: hasImage ? imagePath : "",
+      category: kr.category,
+      searchText: [
+        kr.name,
+        kr.baseType,
+        kr.category,
+        ...kr.properties,
+        ...kr.requirements,
+        ...kr.implicitModifiers,
+        ...kr.explicitModifiers,
+        en?.name,
+        en?.baseType,
+        en?.category,
+        ...(en?.properties ?? []),
+        ...(en?.requirements ?? []),
+        ...(en?.implicitModifiers ?? []),
+        ...(en?.explicitModifiers ?? []),
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase(),
+      kr,
+      en: en ?? null,
+    };
+  }),
+);
+
+await mkdir(path.dirname(outFile), { recursive: true });
+await writeFile(
+  outFile,
+  `// Generated by scripts/generate-items.mjs. Do not edit by hand.
+export type Language = "kr" | "en";
+
+export type ItemAttribute = {
+  name: string;
+  value: string;
+};
+
+export type LocalizedItem = {
+  language: Language;
+  sourceKey: string;
+  slug: string;
+  title: string;
+  source: string;
+  name: string;
+  baseType: string;
+  imageFile: string;
+  imageUrl: string;
+  category: string;
+  properties: string[];
+  requirements: string[];
+  implicitModifiers: string[];
+  explicitModifiers: string[];
+  flavourText: string;
+  attributes: ItemAttribute[];
+};
+
+export type UniqueItem = {
+  slug: string;
+  sourceKey: string;
+  imagePath: string;
+  category: string;
+  searchText: string;
+  kr: LocalizedItem;
+  en: LocalizedItem | null;
+};
+
+export const items = ${JSON.stringify(items, null, 2)} satisfies UniqueItem[];
+`,
+);
+
+console.log(`Generated ${items.length} unique items at ${outFile}.`);
