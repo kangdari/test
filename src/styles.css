@@ -311,8 +311,17 @@ h1 {
 }
 
 .zoom-control input {
+  min-width: 120px;
   width: 100%;
   accent-color: var(--gold);
+}
+
+.zoom-value {
+  min-width: 44px;
+  color: #d9c397;
+  font-size: 0.82rem;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .tree-meta {

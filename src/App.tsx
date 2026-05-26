@@ -438,14 +438,20 @@ function PassiveTreeView() {
   const selectedNode = selectedNodeId && treeData ? treeData.nodes[selectedNodeId] : null;
   const treeWidth = treeData ? treeData.max_x - treeData.min_x : 1;
   const treeHeight = treeData ? treeData.max_y - treeData.min_y : 1;
-  const viewBoxPadding = 1400 / zoom;
+  const viewBoxPadding = 900;
+  const defaultViewBoxWidth = treeWidth + viewBoxPadding * 2;
+  const defaultViewBoxHeight = treeHeight + viewBoxPadding * 2;
+  const viewBoxWidth = defaultViewBoxWidth / zoom;
+  const viewBoxHeight = defaultViewBoxHeight / zoom;
+  const viewBoxCenterX = treeData ? treeData.min_x + treeWidth / 2 : 0;
+  const viewBoxCenterY = treeData ? treeData.min_y + treeHeight / 2 : 0;
   const viewBox = treeData
-    ? `${treeData.min_x - viewBoxPadding} ${treeData.min_y - viewBoxPadding} ${
-        treeWidth + viewBoxPadding * 2
-      } ${treeHeight + viewBoxPadding * 2}`
+    ? `${viewBoxCenterX - viewBoxWidth / 2} ${
+        viewBoxCenterY - viewBoxHeight / 2
+      } ${viewBoxWidth} ${viewBoxHeight}`
     : "0 0 1 1";
-  const visibleLinkPath = useMemo(() => {
-    if (!treeData) return "";
+  const visibleLinkPaths = useMemo(() => {
+    if (!treeData) return [];
 
     return treeData.edges
       .map((edge) => {
@@ -454,15 +460,16 @@ function PassiveTreeView() {
         const from = treeData.nodes[edge.from];
         const to = treeData.nodes[edge.to];
         if (!from || !to) return "";
+        if (from.ascendancyId || to.ascendancyId) return "";
 
         if (Number.isFinite(edge.orbitX) && Number.isFinite(edge.orbitY)) {
           return `M ${from.x} ${from.y} Q ${edge.orbitX} ${edge.orbitY} ${to.x} ${to.y}`;
         }
         return `M ${from.x} ${from.y} L ${to.x} ${to.y}`;
       })
-      .filter(Boolean)
-      .join(" ");
+      .filter(Boolean);
   }, [treeData, visibleNodeIds]);
+  const visibleLinkPath = visibleLinkPaths.join(" ");
 
   function selectEventNode(target: EventTarget | null) {
     if (!(target instanceof SVGElement)) return;
@@ -537,19 +544,20 @@ function PassiveTreeView() {
             <ZoomOut size={16} aria-hidden="true" />
             <input
               type="range"
-              min="0.7"
-              max="2.2"
-              step="0.1"
+              min="0.45"
+              max="4"
+              step="0.05"
               value={zoom}
               onChange={(event) => setZoom(Number(event.target.value))}
             />
+            <span className="zoom-value">{Math.round(zoom * 100)}%</span>
             <ZoomIn size={16} aria-hidden="true" />
           </div>
         </section>
 
         <div className="tree-meta">
           <span>{filteredNodeEntries.length.toLocaleString()} nodes</span>
-          <span>{treeData.edges.length.toLocaleString()} links</span>
+          <span>{visibleLinkPaths.length.toLocaleString()} links</span>
           <span>{treeData.classes.length} classes</span>
         </div>
 
